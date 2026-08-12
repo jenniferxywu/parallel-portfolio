@@ -1,0 +1,102 @@
+"""Read-only HTTP bridge from Parallel to a local Moomoo OpenD gateway."""
+
+import hmac
+import json
+import os
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from moomoo import Currency, OpenSecTradeContext, RET_OK, SecurityFirm, TrdEnv, TrdMarket
+
+
+BRIDGE_TOKEN = os.environ.get("MOOMOO_BRIDGE_TOKEN", "")
+BRIDGE_HOST = os.environ.get("BRIDGE_HOST", "127.0.0.1")
+BRIDGE_PORT = int(os.environ.get("BRIDGE_PORT", "8788"))
+OPEND_HOST = os.environ.get("MOOMOO_OPEND_HOST", "127.0.0.1")
+OPEND_PORT = int(os.environ.get("MOOMOO_OPEND_PORT", "11111"))
+ACCOUNT_ID = int(os.environ.get("MOOMOO_ACCOUNT_ID", "0"))
+TRADE_MARKET = getattr(TrdMarket, os.environ.get("MOOMOO_TRADE_MARKET", "US").upper())
+SECURITY_FIRM = getattr(SecurityFirm, os.environ.get("MOOMOO_SECURITY_FIRM", "FUTUSG").upper())
+
+
+def safe_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def portfolio():
+    context = OpenSecTradeContext(
+        filter_trdmarket=TRADE_MARKET,
+        host=OPEND_HOST,
+        port=OPEND_PORT,
+        security_firm=SECURITY_FIRM,
+    )
+    try:
+        query_args = {"trd_env": TrdEnv.REAL, "currency": Currency.USD}
+        if ACCOUNT_ID:
+            query_args["acc_id"] = ACCOUNT_ID
+
+        funds_ret, funds = context.accinfo_query(**query_args)
+        positions_ret, positions = context.position_list_query(**query_args)
+        if funds_ret != RET_OK:
+            raise RuntimeError(f"Moomoo funds query failed: {funds}")
+        if positions_ret != RET_OK:
+            raise RuntimeError(f"Moomoo positions query failed: {positions}")
+
+        fund_row = funds.iloc[0].to_dict() if not funds.empty else {}
+        normalized = []
+        for _, row in positions.iterrows():
+            symbol = str(row.get("code", ""))
+            normalized.append({
+                "symbol": symbol.split(".")[-1],
+                "name": str(row.get("stock_name", symbol)),
+                "type": "Equity",
+                "marketValue": safe_float(row.get("market_val")),
+                "quantity": safe_float(row.get("qty")),
+                "pnl": safe_float(row.get("pl_val", row.get("unrealized_pl", 0))),
+                "pnlPct": safe_float(row.get("pl_ratio", row.get("pl_ratio_avg_cost", 0))),
+            })
+
+        cash_fields = ("us_cash", "cash", "avl_withdrawal_cash")
+        cash = next((safe_float(fund_row.get(key)) for key in cash_fields if fund_row.get(key) is not None), 0.0)
+        total = safe_float(fund_row.get("total_assets"), sum(item["marketValue"] for item in normalized) + cash)
+        return {"total": total, "cash": cash, "positions": normalized}
+    finally:
+        context.close()
+
+
+class Handler(BaseHTTPRequestHandler):
+    def send_json(self, status, payload):
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        if self.path == "/health":
+            self.send_json(200, {"ok": True})
+            return
+        if self.path != "/portfolio":
+            self.send_json(404, {"error": "Not found"})
+            return
+        supplied = self.headers.get("Authorization", "").removeprefix("Bearer ")
+        if not BRIDGE_TOKEN or not hmac.compare_digest(supplied, BRIDGE_TOKEN):
+            self.send_json(401, {"error": "Unauthorized"})
+            return
+        try:
+            self.send_json(200, portfolio())
+        except Exception as error:
+            self.send_json(502, {"error": str(error)})
+
+    def log_message(self, format, *args):
+        return
+
+
+if __name__ == "__main__":
+    if not BRIDGE_TOKEN:
+        raise SystemExit("Set MOOMOO_BRIDGE_TOKEN before starting the bridge.")
+    print(f"Moomoo read-only bridge listening on http://{BRIDGE_HOST}:{BRIDGE_PORT}")
+    ThreadingHTTPServer((BRIDGE_HOST, BRIDGE_PORT), Handler).serve_forever()
