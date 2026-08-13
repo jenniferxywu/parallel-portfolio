@@ -1,15 +1,5 @@
 type Holding = { symbol:string; name:string; source:"Moomoo"|"Bitget"; kind:string; value:number; allocation:number; pnl:number; pnlPct:number; quantity:string };
 
-const demoHoldings: Holding[] = [
-  { symbol:"NVDA",name:"NVIDIA",source:"Moomoo",kind:"Equity",value:38124.4,allocation:20.65,pnl:6280.2,pnlPct:19.72,quantity:"211 shares" },
-  { symbol:"BTC",name:"Bitcoin",source:"Bitget",kind:"Crypto",value:28940.12,allocation:15.68,pnl:3441.08,pnlPct:13.5,quantity:"0.264 BTC" },
-  { symbol:"VOO",name:"Vanguard S&P 500 ETF",source:"Moomoo",kind:"ETF",value:27170.8,allocation:14.72,pnl:2168.45,pnlPct:8.67,quantity:"47 shares" },
-  { symbol:"ETH",name:"Ethereum",source:"Bitget",kind:"Crypto",value:15884.1,allocation:8.6,pnl:-430.26,pnlPct:-2.64,quantity:"3.41 ETH" },
-  { symbol:"AAPL",name:"Apple",source:"Moomoo",kind:"Equity",value:24618.65,allocation:13.34,pnl:1836.2,pnlPct:8.06,quantity:"103 shares" },
-  { symbol:"QQQ",name:"Invesco QQQ Trust",source:"Moomoo",kind:"ETF",value:19763.25,allocation:10.7,pnl:1130.44,pnlPct:6.07,quantity:"35 shares" },
-  { symbol:"USDT",name:"Tether",source:"Bitget",kind:"Cash",value:7316,allocation:3.96,pnl:0,pnlPct:0,quantity:"7,316 USDT" },
-];
-
 const base64 = (bytes: ArrayBuffer) => {
   let binary = "";
   for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte);
@@ -67,7 +57,7 @@ async function getMoomoo(): Promise<{holdings:Holding[];total:number;cash:number
 export async function GET() {
   const [moomoo,bitget]=await Promise.allSettled([getMoomoo(),getBitget()]);
   const moomooLive=moomoo.status==="fulfilled", bitgetLive=bitget.status==="fulfilled";
-  if(!moomooLive && !bitgetLive) return Response.json({mode:"demo",updatedAt:new Date().toISOString(),totalValue:184620.42,dayChange:2384.18,dayChangePct:1.31,invested:168320.42,cash:16300,sources:{Moomoo:{connected:false,value:132480.2,detail:moomoo.reason?.message||"Bridge not configured"},Bitget:{connected:false,value:52140.22,detail:bitget.reason?.message||"API key not configured"}},history:[42,45,43,49,47,53,51,56,58,55,62,65,63,69,72,70,76,81,79,86,91,94],holdings:demoHoldings});
+  if(!moomooLive && !bitgetLive) return Response.json({mode:"demo",updatedAt:new Date().toISOString(),totalValue:0,dayChange:0,dayChangePct:0,invested:0,cash:0,sources:{Moomoo:{connected:false,value:0,detail:moomoo.reason?.message||"Bridge not configured"},Bitget:{connected:false,value:0,detail:bitget.reason?.message||"API key not configured"}},history:Array(22).fill(0),holdings:[]});
   const liveHoldings=[...(moomooLive?moomoo.value.holdings:[]),...(bitgetLive?bitget.value.holdings:[])];
   const totalValue=(moomooLive?moomoo.value.total:0)+(bitgetLive?bitget.value.total:0);
   liveHoldings.forEach(item=>item.allocation=totalValue?item.value/totalValue*100:0);

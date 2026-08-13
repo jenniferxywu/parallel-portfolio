@@ -31,25 +31,17 @@ type Portfolio = {
 const demoPortfolio: Portfolio = {
   mode: "demo",
   updatedAt: new Date().toISOString(),
-  totalValue: 184620.42,
-  dayChange: 2384.18,
-  dayChangePct: 1.31,
-  invested: 168320.42,
-  cash: 16300,
+  totalValue: 0,
+  dayChange: 0,
+  dayChangePct: 0,
+  invested: 0,
+  cash: 0,
   sources: {
-    Moomoo: { connected: false, value: 132480.2, detail: "Bridge not configured" },
-    Bitget: { connected: false, value: 52140.22, detail: "API key not configured" },
+    Moomoo: { connected: false, value: 0, detail: "Bridge not configured" },
+    Bitget: { connected: false, value: 0, detail: "API key not configured" },
   },
-  history: [42, 45, 43, 49, 47, 53, 51, 56, 58, 55, 62, 65, 63, 69, 72, 70, 76, 81, 79, 86, 91, 94],
-  holdings: [
-    { symbol: "NVDA", name: "NVIDIA", source: "Moomoo", kind: "Equity", value: 38124.4, allocation: 20.65, pnl: 6280.2, pnlPct: 19.72, quantity: "211 shares" },
-    { symbol: "BTC", name: "Bitcoin", source: "Bitget", kind: "Crypto", value: 28940.12, allocation: 15.68, pnl: 3441.08, pnlPct: 13.5, quantity: "0.264 BTC" },
-    { symbol: "VOO", name: "Vanguard S&P 500 ETF", source: "Moomoo", kind: "ETF", value: 27170.8, allocation: 14.72, pnl: 2168.45, pnlPct: 8.67, quantity: "47 shares" },
-    { symbol: "ETH", name: "Ethereum", source: "Bitget", kind: "Crypto", value: 15884.1, allocation: 8.6, pnl: -430.26, pnlPct: -2.64, quantity: "3.41 ETH" },
-    { symbol: "AAPL", name: "Apple", source: "Moomoo", kind: "Equity", value: 24618.65, allocation: 13.34, pnl: 1836.2, pnlPct: 8.06, quantity: "103 shares" },
-    { symbol: "QQQ", name: "Invesco QQQ Trust", source: "Moomoo", kind: "ETF", value: 19763.25, allocation: 10.7, pnl: 1130.44, pnlPct: 6.07, quantity: "35 shares" },
-    { symbol: "USDT", name: "Tether", source: "Bitget", kind: "Cash", value: 7316, allocation: 3.96, pnl: 0, pnlPct: 0, quantity: "7,316 USDT" },
-  ],
+  history: Array(22).fill(0),
+  holdings: [],
 };
 
 const money = (value: number, hidden = false) => hidden ? "••••••" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value);
@@ -107,7 +99,7 @@ export default function Home() {
         <header className="topbar">
           <div><h1>{activeView}</h1><p>Your complete portfolio, in one place.</p></div>
           <div className="top-actions">
-            <span className={portfolio.mode === "live" ? "mode live" : "mode"}><i />{portfolio.mode === "live" ? "Live data" : "Demo data"}</span>
+            <span className={portfolio.mode === "live" ? "mode live" : "mode"}><i />{portfolio.mode === "live" ? "Live data" : "Not connected"}</span>
             <button className="icon-button" aria-label={hidden ? "Show balances" : "Hide balances"} onClick={() => setHidden(!hidden)}>{hidden ? "○" : "◉"}</button>
             <button className="refresh-button" onClick={refresh} disabled={loading}><span className={loading ? "spin" : ""}>↻</span>{loading ? "Syncing" : "Refresh"}</button>
           </div>
@@ -120,7 +112,7 @@ export default function Home() {
               <div className="total-value">{money(portfolio.totalValue, hidden)}</div>
               <div className="performance"><span>{signed(portfolio.dayChange)}</span><span>+{portfolio.dayChangePct.toFixed(2)}%</span><small>today</small></div>
               <div className="chart" aria-label="Portfolio value trend">
-                {portfolio.history.map((point, index) => <i key={index} style={{ height: `${Math.max(16, point)}%` }} />)}
+                {portfolio.history.map((point, index) => <i key={index} style={{ height: portfolio.mode === "live" ? `${Math.max(16, point)}%` : "2px" }} />)}
               </div>
               <div className="chart-labels"><span>JUL 14</span><span>JUL 21</span><span>JUL 28</span><span>AUG 4</span><span>TODAY</span></div>
             </div>
@@ -165,7 +157,7 @@ export default function Home() {
                     <td><div className="allocation-cell"><span>{item.allocation.toFixed(1)}%</span><i><b style={{ width: `${Math.min(100, item.allocation * 3)}%` }} /></i></div></td>
                     <td className={item.pnl >= 0 ? "positive" : "negative"}><strong>{item.pnl >= 0 ? "+" : "−"}{money(Math.abs(item.pnl), hidden)}</strong><small>{item.pnl >= 0 ? "+" : "−"}{Math.abs(item.pnlPct).toFixed(2)}%</small></td>
                   </tr>
-                ))}</tbody>
+                ))}{holdings.length === 0 && <tr><td colSpan={6} className="empty-state">No connected holdings yet. Connect an account and refresh.</td></tr>}</tbody>
               </table>
             </div>
           </section>
