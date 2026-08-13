@@ -45,23 +45,27 @@ async function getBitget(): Promise<{holdings:Holding[];total:number}> {
   return {holdings,total:holdings.reduce((sum,asset)=>sum+asset.value,0)};
 }
 
-async function getMoomoo(): Promise<{holdings:Holding[];total:number;cash:number}> {
+async function getMoomoo(): Promise<{holdings:Holding[];total:number;cash:number;currency:string;usdToBase:number}> {
   const url=process.env.MOOMOO_BRIDGE_URL, token=process.env.MOOMOO_BRIDGE_TOKEN;
   if(!url) throw new Error("Bridge not configured");
   const response=await fetch(`${url.replace(/\/$/,"")}/portfolio`,{headers:token?{Authorization:`Bearer ${token}`}:{}});
-  const payload=await response.json() as {total:number;cash?:number;positions:Array<{symbol:string;name?:string;type?:string;marketValue:number;quantity:number|string;pnl?:number;pnlPct?:number}>};
+  const payload=await response.json() as {total:number;cash?:number;currency?:string;usdToBase?:number;positions:Array<{symbol:string;name?:string;type?:string;marketValue:number;quantity:number|string;pnl?:number;pnlPct?:number}>};
   if(!response.ok || !payload.positions) throw new Error("Moomoo bridge connection failed");
-  return {total:Number(payload.total)||0,cash:Number(payload.cash)||0,holdings:payload.positions.map(item=>({symbol:item.symbol,name:item.name||item.symbol,source:"Moomoo" as const,kind:item.type||"Equity",value:Number(item.marketValue)||0,allocation:0,pnl:Number(item.pnl)||0,pnlPct:Number(item.pnlPct)||0,quantity:`${item.quantity} units`}))};
+  return {total:Number(payload.total)||0,cash:Number(payload.cash)||0,currency:payload.currency||"USD",usdToBase:Number(payload.usdToBase)||1,holdings:payload.positions.map(item=>({symbol:item.symbol,name:item.name||item.symbol,source:"Moomoo" as const,kind:item.type||"Equity",value:Number(item.marketValue)||0,allocation:0,pnl:Number(item.pnl)||0,pnlPct:Number(item.pnlPct)||0,quantity:`${item.quantity} units`}))};
 }
 
 export async function GET() {
   const [moomoo,bitget]=await Promise.allSettled([getMoomoo(),getBitget()]);
   const moomooLive=moomoo.status==="fulfilled", bitgetLive=bitget.status==="fulfilled";
-  if(!moomooLive && !bitgetLive) return Response.json({mode:"demo",updatedAt:new Date().toISOString(),totalValue:0,dayChange:0,dayChangePct:0,invested:0,cash:0,sources:{Moomoo:{connected:false,value:0,detail:moomoo.reason?.message||"Bridge not configured"},Bitget:{connected:false,value:0,detail:bitget.reason?.message||"API key not configured"}},history:Array(22).fill(0),holdings:[]});
-  const liveHoldings=[...(moomooLive?moomoo.value.holdings:[]),...(bitgetLive?bitget.value.holdings:[])];
-  const totalValue=(moomooLive?moomoo.value.total:0)+(bitgetLive?bitget.value.total:0);
+  if(!moomooLive && !bitgetLive) return Response.json({mode:"demo",currency:"SGD",updatedAt:new Date().toISOString(),totalValue:0,dayChange:0,dayChangePct:0,invested:0,cash:0,sources:{Moomoo:{connected:false,value:0,detail:moomoo.reason?.message||"Bridge not configured"},Bitget:{connected:false,value:0,detail:bitget.reason?.message||"API key not configured"}},history:Array(22).fill(0),holdings:[]});
+  const currency=moomooLive?moomoo.value.currency:"USD";
+  const usdToBase=moomooLive?moomoo.value.usdToBase:1;
+  const convertedBitgetHoldings=bitgetLive?bitget.value.holdings.map(item=>({...item,value:item.value*usdToBase,pnl:item.pnl*usdToBase})):[];
+  const liveHoldings=[...(moomooLive?moomoo.value.holdings:[]),...convertedBitgetHoldings];
+  const bitgetTotal=bitgetLive?bitget.value.total*usdToBase:0;
+  const totalValue=(moomooLive?moomoo.value.total:0)+bitgetTotal;
   liveHoldings.forEach(item=>item.allocation=totalValue?item.value/totalValue*100:0);
   liveHoldings.sort((a,b)=>b.value-a.value);
-  const cash=(moomooLive?moomoo.value.cash:0)+(bitgetLive?(bitget.value.holdings.find(item=>item.symbol==="USDT")?.value||0):0);
-  return Response.json({mode:"live",updatedAt:new Date().toISOString(),totalValue,dayChange:liveHoldings.reduce((sum,item)=>sum+item.pnl,0),dayChangePct:0,invested:Math.max(0,totalValue-cash),cash,sources:{Moomoo:{connected:moomooLive,value:moomooLive?moomoo.value.total:0,detail:moomooLive?"OpenD bridge connected":moomoo.reason?.message},Bitget:{connected:bitgetLive,value:bitgetLive?bitget.value.total:0,detail:bitgetLive?"UTA connected":bitget.reason?.message}},history:[42,45,43,49,47,53,51,56,58,55,62,65,63,69,72,70,76,81,79,86,91,94],holdings:liveHoldings});
+  const cash=(moomooLive?moomoo.value.cash:0)+(bitgetLive?(convertedBitgetHoldings.find(item=>item.symbol==="USDT")?.value||0):0);
+  return Response.json({mode:"live",currency,updatedAt:new Date().toISOString(),totalValue,dayChange:liveHoldings.reduce((sum,item)=>sum+item.pnl,0),dayChangePct:0,invested:Math.max(0,totalValue-cash),cash,sources:{Moomoo:{connected:moomooLive,value:moomooLive?moomoo.value.total:0,detail:moomooLive?"OpenD bridge connected":moomoo.reason?.message},Bitget:{connected:bitgetLive,value:bitgetTotal,detail:bitgetLive?"UTA connected":bitget.reason?.message}},history:[42,45,43,49,47,53,51,56,58,55,62,65,63,69,72,70,76,81,79,86,91,94],holdings:liveHoldings});
 }

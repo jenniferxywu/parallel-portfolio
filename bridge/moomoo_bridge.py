@@ -16,6 +16,8 @@ OPEND_PORT = int(os.environ.get("MOOMOO_OPEND_PORT", "11111"))
 ACCOUNT_ID = int(os.environ.get("MOOMOO_ACCOUNT_ID", "0"))
 TRADE_MARKET = getattr(TrdMarket, os.environ.get("MOOMOO_TRADE_MARKET", "US").upper())
 SECURITY_FIRM = getattr(SecurityFirm, os.environ.get("MOOMOO_SECURITY_FIRM", "FUTUSG").upper())
+BASE_CURRENCY_NAME = os.environ.get("MOOMOO_BASE_CURRENCY", "SGD").upper()
+BASE_CURRENCY = getattr(Currency, BASE_CURRENCY_NAME)
 
 
 def safe_float(value, default=0.0):
@@ -33,7 +35,7 @@ def portfolio():
         security_firm=SECURITY_FIRM,
     )
     try:
-        query_args = {"trd_env": TrdEnv.REAL, "currency": Currency.USD}
+        query_args = {"trd_env": TrdEnv.REAL, "currency": BASE_CURRENCY}
         if ACCOUNT_ID:
             query_args["acc_id"] = ACCOUNT_ID
 
@@ -45,23 +47,44 @@ def portfolio():
             raise RuntimeError(f"Moomoo positions query failed: {positions}")
 
         fund_row = funds.iloc[0].to_dict() if not funds.empty else {}
+        base_total = safe_float(fund_row.get("total_assets"))
+        currencies = {str(value).upper() for value in positions.get("currency", []) if value}
+        exchange_rates = {BASE_CURRENCY_NAME: 1.0}
+        for currency_name in currencies | {"USD"}:
+            if currency_name == BASE_CURRENCY_NAME or not hasattr(Currency, currency_name):
+                continue
+            currency_args = {**query_args, "currency": getattr(Currency, currency_name)}
+            currency_ret, currency_funds = context.accinfo_query(**currency_args)
+            if currency_ret == RET_OK and not currency_funds.empty:
+                currency_total = safe_float(currency_funds.iloc[0].get("total_assets"))
+                if base_total and currency_total:
+                    exchange_rates[currency_name] = base_total / currency_total
+
         normalized = []
         for _, row in positions.iterrows():
             symbol = str(row.get("code", ""))
+            source_currency = str(row.get("currency", BASE_CURRENCY_NAME)).upper()
+            exchange_rate = exchange_rates.get(source_currency, 1.0)
             normalized.append({
                 "symbol": symbol.split(".")[-1],
                 "name": str(row.get("stock_name", symbol)),
                 "type": "Equity",
-                "marketValue": safe_float(row.get("market_val")),
+                "marketValue": safe_float(row.get("market_val")) * exchange_rate,
                 "quantity": safe_float(row.get("qty")),
-                "pnl": safe_float(row.get("pl_val", row.get("unrealized_pl", 0))),
+                "pnl": safe_float(row.get("pl_val", row.get("unrealized_pl", 0))) * exchange_rate,
                 "pnlPct": safe_float(row.get("pl_ratio", row.get("pl_ratio_avg_cost", 0))),
             })
 
-        cash_fields = ("us_cash", "cash", "avl_withdrawal_cash")
+        cash_fields = ("cash", "avl_withdrawal_cash", "us_cash")
         cash = next((safe_float(fund_row.get(key)) for key in cash_fields if fund_row.get(key) is not None), 0.0)
         total = safe_float(fund_row.get("total_assets"), sum(item["marketValue"] for item in normalized) + cash)
-        return {"total": total, "cash": cash, "positions": normalized}
+        return {
+            "total": total,
+            "cash": cash,
+            "currency": BASE_CURRENCY_NAME,
+            "usdToBase": exchange_rates.get("USD", 1.0),
+            "positions": normalized,
+        }
     finally:
         context.close()
 
