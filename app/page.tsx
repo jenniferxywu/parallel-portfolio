@@ -81,7 +81,7 @@ export default function Home() {
   );
   const sourceTotal = portfolio.sources.Moomoo.value + portfolio.sources.Bitget.value || 1;
   const moomooShare = Math.round((portfolio.sources.Moomoo.value / sourceTotal) * 100);
-  const lastUpdated = new Date(portfolio.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const lastUpdated = new Date(portfolio.updatedAt).toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Singapore" });
 
   return (
     <main className="app-shell">

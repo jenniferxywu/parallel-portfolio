@@ -83,7 +83,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(404, {"error": "Not found"})
             return
         supplied = self.headers.get("Authorization", "").removeprefix("Bearer ")
-        if not BRIDGE_TOKEN or not hmac.compare_digest(supplied, BRIDGE_TOKEN):
+        if BRIDGE_TOKEN and not hmac.compare_digest(supplied, BRIDGE_TOKEN):
             self.send_json(401, {"error": "Unauthorized"})
             return
         try:
@@ -96,7 +96,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    if not BRIDGE_TOKEN:
-        raise SystemExit("Set MOOMOO_BRIDGE_TOKEN before starting the bridge.")
+    if not BRIDGE_TOKEN and BRIDGE_HOST not in ("127.0.0.1", "localhost", "::1"):
+        raise SystemExit("Set MOOMOO_BRIDGE_TOKEN before exposing the bridge beyond localhost.")
     print(f"Moomoo read-only bridge listening on http://{BRIDGE_HOST}:{BRIDGE_PORT}")
     ThreadingHTTPServer((BRIDGE_HOST, BRIDGE_PORT), Handler).serve_forever()
