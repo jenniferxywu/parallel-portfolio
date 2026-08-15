@@ -15,6 +15,21 @@ type Holding = {
   quantity: string;
 };
 
+type FuturesPosition = {
+  category: string;
+  symbol: string;
+  side: "long" | "short";
+  marginCoin: string;
+  marginMode: string;
+  quantity: number;
+  leverage: number;
+  avgPrice: number;
+  markPrice: number;
+  margin: number;
+  pnl: number;
+  liquidationPrice: number | null;
+};
+
 type Portfolio = {
   mode: "demo" | "live";
   currency: string;
@@ -27,6 +42,9 @@ type Portfolio = {
   sources: Record<Source, { connected: boolean; value: number; detail: string }>;
   history: number[];
   holdings: Holding[];
+  positions: FuturesPosition[];
+  positionsConnected: boolean;
+  positionsDetail: string;
 };
 
 const demoPortfolio: Portfolio = {
@@ -44,9 +62,13 @@ const demoPortfolio: Portfolio = {
   },
   history: Array(22).fill(0),
   holdings: [],
+  positions: [],
+  positionsConnected: false,
+  positionsDetail: "Bitget is not connected",
 };
 
 const money = (value: number, currency: string, hidden = false) => hidden ? "••••••" : new Intl.NumberFormat("en-SG", { style: "currency", currency, maximumFractionDigits: 2 }).format(value);
+const tokenMoney = (value: number, token: string, hidden = false) => hidden ? "••••••" : `${new Intl.NumberFormat("en-SG", { maximumFractionDigits: 2 }).format(value)} ${token}`;
 const signed = (value: number, currency: string) => `${value >= 0 ? "+" : "−"}${money(Math.abs(value), currency)}`;
 
 export default function Home() {
@@ -160,6 +182,25 @@ export default function Home() {
                     <td className={item.pnl >= 0 ? "positive" : "negative"}><strong>{item.pnl >= 0 ? "+" : "−"}{money(Math.abs(item.pnl), portfolio.currency, hidden)}</strong><small>{item.pnl >= 0 ? "+" : "−"}{Math.abs(item.pnlPct).toFixed(2)}%</small></td>
                   </tr>
                 ))}{holdings.length === 0 && <tr><td colSpan={6} className="empty-state">No connected holdings yet. Connect an account and refresh.</td></tr>}</tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="section-block holdings-block">
+            <div className="section-heading"><div><h2>Open futures positions</h2><p>Live Bitget positions · excluded from portfolio totals to prevent double counting</p></div><span className={portfolio.positionsConnected ? "status connected" : "status demo"}><i />{portfolio.positionsConnected ? "Read-only live" : "Permission needed"}</span></div>
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Contract</th><th>Side</th><th>Position</th><th>Entry / Mark</th><th>Margin</th><th>Unrealized P&amp;L</th></tr></thead>
+                <tbody>{portfolio.positions.map((position) => (
+                  <tr key={`${position.category}-${position.symbol}-${position.side}`}>
+                    <td><div className="asset-icon bitget">{position.symbol.slice(0, 2)}</div><div className="asset-name"><strong>{position.symbol}</strong><small>{position.category}</small></div></td>
+                    <td><span className={`platform-pill ${position.side === "long" ? "bitget" : "moomoo"}`}><i />{position.side.toUpperCase()} · {position.leverage}×</span></td>
+                    <td>{position.quantity.toLocaleString(undefined,{maximumFractionDigits:8})}<small style={{display:"block"}}>{position.marginMode.replace("ed", "")} margin</small></td>
+                    <td><strong>{tokenMoney(position.avgPrice, position.marginCoin, hidden)}</strong><small style={{display:"block"}}>Mark {tokenMoney(position.markPrice, position.marginCoin, hidden)}</small></td>
+                    <td><strong>{tokenMoney(position.margin, position.marginCoin, hidden)}</strong></td>
+                    <td className={position.pnl >= 0 ? "positive" : "negative"}><strong>{position.pnl >= 0 ? "+" : "−"}{tokenMoney(Math.abs(position.pnl), position.marginCoin, hidden)}</strong>{position.liquidationPrice && <small>Liq. {tokenMoney(position.liquidationPrice, position.marginCoin, hidden)}</small>}</td>
+                  </tr>
+                ))}{portfolio.positions.length === 0 && <tr><td colSpan={6} className="empty-state">{portfolio.positionsConnected ? "No open futures positions." : `${portfolio.positionsDetail}. Enable UTA Trade (Read) on the Bitget API key, then refresh.`}</td></tr>}</tbody>
               </table>
             </div>
           </section>
