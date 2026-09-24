@@ -3,6 +3,7 @@
 import hmac
 import json
 import os
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from moomoo import Currency, OpenSecTradeContext, RET_OK, SecurityFirm, TrdEnv, TrdMarket
@@ -65,24 +66,40 @@ def portfolio():
             symbol = str(row.get("code", ""))
             source_currency = str(row.get("currency", BASE_CURRENCY_NAME)).upper()
             exchange_rate = exchange_rates.get(source_currency, 1.0)
+            market_value_native = safe_float(row.get("market_val"))
+            pnl_native = safe_float(row.get("pl_val", row.get("unrealized_pl", 0)))
+            quantity = safe_float(row.get("qty"))
             normalized.append({
+                "externalPositionId": symbol,
                 "symbol": symbol.split(".")[-1],
                 "name": str(row.get("stock_name", symbol)),
                 "type": "Equity",
-                "marketValue": safe_float(row.get("market_val")) * exchange_rate,
-                "quantity": safe_float(row.get("qty")),
-                "pnl": safe_float(row.get("pl_val", row.get("unrealized_pl", 0))) * exchange_rate,
+                "currency": source_currency,
+                "marketValueNative": market_value_native,
+                "marketValue": market_value_native * exchange_rate,
+                "quantity": quantity,
+                "averageCost": safe_float(row.get("cost_price")),
+                "currentPrice": safe_float(row.get("nominal_price"), market_value_native / quantity if quantity else 0),
+                "pnlNative": pnl_native,
+                "pnl": pnl_native * exchange_rate,
                 "pnlPct": safe_float(row.get("pl_ratio", row.get("pl_ratio_avg_cost", 0))),
             })
 
         cash_fields = ("cash", "avl_withdrawal_cash", "us_cash")
         cash = next((safe_float(fund_row.get(key)) for key in cash_fields if fund_row.get(key) is not None), 0.0)
         total = safe_float(fund_row.get("total_assets"), sum(item["marketValue"] for item in normalized) + cash)
+        as_of = int(time.time() * 1000)
         return {
+            "asOf": as_of,
             "total": total,
             "cash": cash,
             "currency": BASE_CURRENCY_NAME,
             "usdToBase": exchange_rates.get("USD", 1.0),
+            "cashBalances": [{"currency": BASE_CURRENCY_NAME, "amount": cash}],
+            "fxRates": [
+                {"base": currency, "quote": BASE_CURRENCY_NAME, "rate": rate, "source": "MOOMOO_ACCOUNT_CONVERSION"}
+                for currency, rate in exchange_rates.items() if currency != BASE_CURRENCY_NAME
+            ],
             "positions": normalized,
         }
     finally:
